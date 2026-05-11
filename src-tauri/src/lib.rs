@@ -6,6 +6,19 @@ use tauri::{Emitter, Manager, State};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
+#[cfg(windows)]
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+fn create_hidden_command(program: &str) -> Command {
+    let mut cmd = Command::new(program);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+    cmd
+}
+
 // ─── Data Structures ──────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -65,7 +78,7 @@ impl Default for AppState {
 
 #[tauri::command]
 async fn get_devices() -> Result<Vec<DeviceInfo>, String> {
-    let output = Command::new("adb")
+    let output = create_hidden_command("adb")
         .args(["devices", "-l"])
         .output()
         .await
@@ -127,7 +140,7 @@ fn extract_prop(parts: &[&str], prefix: &str) -> String {
 }
 
 async fn get_device_prop(serial: &str, prop: &str) -> String {
-    let output = Command::new("adb")
+    let output = create_hidden_command("adb")
         .args(["-s", serial, "shell", "getprop", prop])
         .output()
         .await;
@@ -373,7 +386,7 @@ async fn run_test_sequence(
                     .unwrap_or_else(|| "com.sec.atm.Main".to_string());
 
                 // Run java command with automation flags
-                let mut child = match Command::new("java")
+                let mut child = match create_hidden_command("java")
                     .args([
                         "-cp",
                         &classpath,
