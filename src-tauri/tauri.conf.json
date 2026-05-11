@@ -39,8 +39,11 @@
       "icons/icon.ico"
     ],
     "linux": {
-      "category": "Development",
-      "description": "Automated Samsung ATM Test Runner"
+      "deb": {
+        "section": "devel"
+      },
+      "rpm": {
+      }
     }
   }
 }
