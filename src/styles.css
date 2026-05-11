@@ -214,6 +214,11 @@ html, body {
 /* ── Dashboard ────────────────────────────────────── */
 #content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
 #dashboard-header { padding: 20px; border-bottom: 1px solid var(--border); }
+.dashboard-toolbar {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.toolbar-label { font-size: 10px; font-weight: 900; letter-spacing: 2px; color: var(--text-muted); }
 .stats-row { display: flex; gap: 16px; }
 .stat-card { flex: 1; padding: 16px; background: var(--bg-surface); border: 1px solid var(--border); }
 .stat-value { display: block; font-size: 24px; font-weight: 900; color: var(--text-primary); }
@@ -222,7 +227,7 @@ html, body {
 .stat-fail .stat-value { color: var(--red); }
 .stat-running .stat-value { color: var(--cyan); }
 
-.test-dashboard { flex: 1; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
+.test-dashboard { flex: 0 1 auto; max-height: 60%; padding: 20px; overflow-y: auto; display: flex; flex-direction: column; gap: 20px; }
 .device-row { background: var(--bg-surface); border: 1px solid var(--border); padding: 20px; }
 .device-row-header { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; border-bottom: 1px solid var(--border); padding-bottom: 12px; }
 .device-row-name { font-weight: 900; font-size: 14px; letter-spacing: 1px; }
@@ -254,7 +259,7 @@ html, body {
 .test-card.fail .test-card-status, .test-card.error .test-card-status { color: var(--red); }
 
 /* ── Log Console ──────────────────────────────────── */
-#log-section { height: 240px; border-top: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg-sidebar); }
+#log-section { flex: 1; border-top: 1px solid var(--border); display: flex; flex-direction: column; background: var(--bg-sidebar); min-height: 150px; }
 .log-header { padding: 8px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between; }
 .log-title { display: flex; align-items: center; gap: 8px; font-size: 10px; font-weight: 900; letter-spacing: 2px; color: var(--text-muted); }
 .log-badge { background: var(--text-primary); color: var(--bg-base); font-size: 9px; padding: 0 6px; font-weight: 900; }

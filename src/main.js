@@ -79,6 +79,7 @@ function setupEventListeners() {
   document.getElementById("btn-start").addEventListener("click", startTests);
   document.getElementById("btn-stop").addEventListener("click", stopTests);
   document.getElementById("btn-clear-logs").addEventListener("click", clearLogs);
+  document.getElementById("btn-clear-dashboard").addEventListener("click", clearDashboard);
 
   // Update Modal
   document.getElementById("btn-open-update").addEventListener("click", openUpdateModal);
@@ -411,6 +412,18 @@ function clearLogs() {
   logs = [];
   document.getElementById("log-count").textContent = "0";
   document.getElementById("log-console").innerHTML = '<div class="log-empty">Logs cleared</div>';
+}
+
+function clearDashboard() {
+  if (isRunning) return;
+  testStatuses = {};
+  document.getElementById("test-dashboard").innerHTML = `
+    <div class="empty-state-large">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon-large-svg"><path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"></path><path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"></path><path d="M9 12H4s.55-3.03 2-5c1.62-2.2 5-3 5-3"></path><path d="M12 15v5s3.03-.55 5-2c2.2-1.62 3-5 3-5"></path></svg>
+      <h3>Ready to Test</h3>
+      <p>1. Set ATM path &nbsp; 2. Select devices &nbsp; 3. Choose tests &nbsp; 4. Click START</p>
+    </div>`;
+  updateStats();
 }
 
 // ─── Helpers ────────────────────────────────────────

@@ -22,7 +22,8 @@ pub struct TestItem {
     pub id: String,
     pub name: String,
     pub jar: String,
-    pub test_type: String, // "auto" or "optional"
+    pub main_class: String,
+    pub test_type: String, // "auto", "optional", "manual"
     pub description: String,
 }
 
@@ -188,6 +189,15 @@ fn get_available_tests(state: State<AppState>) -> Result<Vec<TestItem>, String> 
             .replace("&amp;", "&");
         let test_type = cap.get(4).map_or("", |m| m.as_str()).to_string();
 
+        let main_class = match name.as_str() {
+            "BVT" => "com.bi.BVT.MainForm",
+            "SVT" => "com.ast.svt.MainKt",
+            "SDT" => "com.sec.atm.Main",
+            "Getprop" => "com.sec.ui.Main",
+            "CSCChecker" => "MyApplcaition",
+            _ => "com.sec.atm.Main",
+        }.to_string();
+
         tests.push(TestItem {
             id: name.clone().to_lowercase(),
             name: name.clone(),
@@ -196,6 +206,7 @@ fn get_available_tests(state: State<AppState>) -> Result<Vec<TestItem>, String> 
             } else {
                 jar
             },
+            main_class,
             test_type,
             description: summary,
         });
@@ -214,6 +225,7 @@ fn get_default_tests() -> Vec<TestItem> {
             id: "bvt".to_string(),
             name: "BVT".to_string(),
             jar: "BVT.jar".to_string(),
+            main_class: "com.bi.BVT.MainForm".to_string(),
             test_type: "auto".to_string(),
             description: "Build Verification Test — Verify permissions, build parameters, CDD compliance".to_string(),
         },
@@ -221,6 +233,7 @@ fn get_default_tests() -> Vec<TestItem> {
             id: "svt".to_string(),
             name: "SVT".to_string(),
             jar: "SVT.jar".to_string(),
+            main_class: "com.ast.svt.MainKt".to_string(),
             test_type: "auto".to_string(),
             description: "Screenshot Verification Tool — Verify GMS placement rules".to_string(),
         },
@@ -228,6 +241,7 @@ fn get_default_tests() -> Vec<TestItem> {
             id: "sdt".to_string(),
             name: "SDT".to_string(),
             jar: "SDT.jar".to_string(),
+            main_class: "com.sec.atm.Main".to_string(),
             test_type: "auto".to_string(),
             description: "Samsung Device Test — Verify device properties, security, apps".to_string(),
         },
@@ -235,6 +249,7 @@ fn get_default_tests() -> Vec<TestItem> {
             id: "getprop".to_string(),
             name: "Getprop".to_string(),
             jar: "Getprop.jar".to_string(),
+            main_class: "com.sec.ui.Main".to_string(),
             test_type: "auto".to_string(),
             description: "Getprop — Verify build properties, security patch level".to_string(),
         },
@@ -242,6 +257,7 @@ fn get_default_tests() -> Vec<TestItem> {
             id: "cscchecker".to_string(),
             name: "CSCChecker".to_string(),
             jar: "CSCChecker.jar".to_string(),
+            main_class: "MyApplcaition".to_string(),
             test_type: "optional".to_string(),
             description: "CSC Checker — Verify CSC specifications".to_string(),
         },
@@ -350,15 +366,24 @@ async fn run_test_sequence(
                 }
                 let classpath = classpath_parts.join(":");
 
-                // Run java command
+                // Find main class for this test
+                let main_class = get_default_tests().into_iter()
+                    .find(|t| t.id == *test_id)
+                    .map(|t| t.main_class)
+                    .unwrap_or_else(|| "com.sec.atm.Main".to_string());
+
+                // Run java command with automation flags
                 let mut child = match Command::new("java")
                     .args([
                         "-cp",
                         &classpath,
-                        "-jar",
-                        &jar_path.to_string_lossy(),
+                        &main_class,
                         "-s",
                         &device_serial,
+                        "-ui", "silent",
+                        "-r", "auto",
+                        "-e", "auto-start",
+                        "-auto",
                     ])
                     .current_dir(&atm_path_clone)
                     .stdout(Stdio::piped())
