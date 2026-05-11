@@ -377,7 +377,11 @@ async fn run_test_sequence(
                         }
                     }
                 }
-                let classpath = classpath_parts.join(":");
+                #[cfg(windows)]
+                let sep = ";";
+                #[cfg(not(windows))]
+                let sep = ":";
+                let classpath = classpath_parts.join(sep);
 
                 // Find main class for this test
                 let main_class = get_default_tests().into_iter()
