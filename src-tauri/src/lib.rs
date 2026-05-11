@@ -366,10 +366,10 @@ async fn run_test_sequence(
                     continue;
                 }
 
-                // ─── Execute using AtmOctopus-style commands per tool ─────────────
+                // ─── Execute using specific tool logic ───────────────────────────
                 let mut cmd = match test_id.as_str() {
                     "svt" => {
-                        // AtmOctopus: java -jar /SVT.jar --silent -s <serial> -o <output_dir>
+                        // SVT has a confirmed --silent flag
                         let out_dir = atm_path_clone.clone() + "/results/SVT/" + &device_serial;
                         let _ = std::fs::create_dir_all(&out_dir);
                         let mut c = create_hidden_command("java");
@@ -381,51 +381,45 @@ async fn run_test_sequence(
                         ]).current_dir(&atm_path_clone);
                         c
                     }
-                    "bvt" => {
-                        // AtmOctopus: java -jar /BVT.jar (no serial flag, but BVT detects connected device)
+                    "sdt" | "getprop" | "bvt" => {
+                        // Use JAR with auto flags but NO silent flag to show the UI
+                        let main_class = match test_id.as_str() {
+                            "sdt" => "com.sec.atm.Main",
+                            "getprop" => "com.sec.ui.Main",
+                            "bvt" => "com.bi.BVT.MainForm",
+                            _ => "com.sec.atm.Main",
+                        };
+
+                        // Build classpath for these tools
+                        let lib_dir = tools_path_clone.join("lib");
+                        let mut cp_parts = vec![jar_path.to_string_lossy().to_string()];
+                        if lib_dir.exists() {
+                            if let Ok(entries) = std::fs::read_dir(&lib_dir) {
+                                for entry in entries.flatten() {
+                                    let p = entry.path();
+                                    if p.extension().map_or(false, |e| e == "jar") {
+                                        cp_parts.push(p.to_string_lossy().to_string());
+                                    }
+                                }
+                            }
+                        }
+                        #[cfg(windows)]
+                        let sep = ";";
+                        #[cfg(not(windows))]
+                        let sep = ":";
+                        let cp = cp_parts.join(sep);
+
                         let mut c = create_hidden_command("java");
-                        c.args(["-jar", &jar_path.to_string_lossy()])
-                            .current_dir(&atm_path_clone);
-                        c
-                    }
-                    "sdt" => {
-                        // AtmOctopus: installs SDT APK via adb push then runs instrumentation
-                        let apk = tools_path_clone.join("resource/SDT/SDT-Official.apk");
-                        let apk2 = tools_path_clone.join("resource/SDT/SDT-Aux-Official.apk");
-                        let mut c = create_hidden_command("adb");
-                        if apk.exists() {
-                            c.args([
-                                "-s", &device_serial,
-                                "install", "-r", "-d", &apk.to_string_lossy(),
-                            ]).current_dir(&atm_path_clone);
-                            let _ = c.output().await;
-                        }
-                        if apk2.exists() {
-                            let mut c2 = create_hidden_command("adb");
-                            c2.args([
-                                "-s", &device_serial,
-                                "install", "-r", "-d", &apk2.to_string_lossy(),
-                            ]).current_dir(&atm_path_clone);
-                            let _ = c2.output().await;
-                        }
-                        // Run SDT instrumentation
-                        let mut c = create_hidden_command("adb");
                         c.args([
+                            "-cp", &cp,
+                            main_class,
                             "-s", &device_serial,
-                            "shell", "am", "instrument", "-w", "-r",
-                            "com.samsung.smcl.sdt.test/androidx.test.runner.AndroidJUnitRunner",
+                            "-auto",
+                            "-e", "auto-start",
                         ]).current_dir(&atm_path_clone);
                         c
                     }
-                    "getprop" => {
-                        // AtmOctopus: adb shell getprop (direct, no JAR)
-                        let mut c = create_hidden_command("adb");
-                        c.args(["-s", &device_serial, "shell", "getprop"])
-                            .current_dir(&atm_path_clone);
-                        c
-                    }
                     _ => {
-                        // Generic fallback: java -jar <tool.jar> -s <serial>
                         let mut c = create_hidden_command("java");
                         c.args(["-jar", &jar_path.to_string_lossy(), "-s", &device_serial])
                             .current_dir(&atm_path_clone);
