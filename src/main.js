@@ -20,38 +20,47 @@ let toolsVersion = "N/A";
 document.addEventListener("DOMContentLoaded", async () => {
   setupEventListeners();
 
-  // Wait for Tauri to be ready
+  // Wait for Tauri to be ready (v2 global interface)
   if (!tauriAvailable()) {
-    console.log("Tauri not available yet, waiting...");
     await new Promise(resolve => {
       const check = setInterval(() => {
         if (tauriAvailable()) { clearInterval(check); resolve(); }
-      }, 100);
-      setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+      }, 50);
+      setTimeout(() => { clearInterval(check); resolve(); }, 3000);
     });
   }
 
-  if (tauriAvailable()) {
-    console.log("Tauri API available ✓");
-    setupTitlebar();
-    await setupTauriListeners();
-    await loadAtmPath();
-    await refreshDevices();
-    await loadTests();
-    await fetchToolsVersion();
-  } else {
-    console.log("Running in browser mode (no Tauri backend)");
-    availableTests = [
-      { id: "bvt", name: "BVT", jar: "BVT.jar", test_type: "auto", description: "Build Verification Test" },
-      { id: "svt", name: "SVT", jar: "SVT.jar", test_type: "auto", description: "Screenshot Verification Tool" },
-      { id: "sdt", name: "SDT", jar: "SDT.jar", test_type: "auto", description: "Samsung Device Test" },
-      { id: "getprop", name: "Getprop", jar: "Getprop.jar", test_type: "auto", description: "Property Verifier" },
-      { id: "cscchecker", name: "CSCChecker", jar: "CSCChecker.jar", test_type: "optional", description: "CSC Checker" },
-    ];
-    renderTests();
+  try {
+    if (tauriAvailable()) {
+      console.log("Tauri API available ✓");
+      setupTitlebar();
+      await setupTauriListeners();
+      await loadAtmPath();
+      
+      // Parallelize non-critical initial data fetch
+      Promise.all([
+        refreshDevices(),
+        loadTests(),
+        fetchToolsVersion()
+      ]).catch(err => console.error("Async init error:", err));
+      
+    } else {
+      console.warn("Running in browser mode");
+      availableTests = [
+        { id: "bvt", name: "BVT", jar: "BVT.jar", test_type: "auto", description: "Build Verification Test" },
+        { id: "svt", name: "SVT", jar: "SVT.jar", test_type: "auto", description: "Screenshot Verification Tool" },
+        { id: "sdt", name: "SDT", jar: "SDT.jar", test_type: "auto", description: "Samsung Device Test" },
+        { id: "getprop", name: "Getprop", jar: "Getprop.jar", test_type: "auto", description: "Property Verifier" },
+        { id: "cscchecker", name: "CSCChecker", jar: "CSCChecker.jar", test_type: "optional", description: "CSC Checker" },
+      ];
+      renderTests();
+    }
+  } catch (err) {
+    console.error("Initialization failed:", err);
+  } finally {
+    // Always hide splash after a short delay
+    setTimeout(hideSplashScreen, 500);
   }
-
-  setTimeout(hideSplashScreen, 800);
 });
 
 function hideSplashScreen() {
