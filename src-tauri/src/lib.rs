@@ -10,12 +10,15 @@ use tokio::process::Command;
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 fn create_hidden_command(program: &str) -> Command {
-    let mut cmd = Command::new(program);
+    let cmd = Command::new(program);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
+        let mut cmd = cmd;
         cmd.creation_flags(CREATE_NO_WINDOW);
+        cmd
     }
+    #[cfg(not(windows))]
     cmd
 }
 
@@ -345,7 +348,7 @@ async fn run_test_sequence(
                     message: format!("▶ Starting {} on {}", test_id, device_serial),
                 });
 
-                if !jar_path.exists() {
+                if !jar_path.exists() && test_id != "getprop" {
                     let _ = app_clone.emit("test-status", TestStatus {
                         device_serial: device_serial.clone(),
                         test_id: test_id.clone(),
@@ -353,60 +356,84 @@ async fn run_test_sequence(
                         progress: 0.0,
                         message: format!("JAR not found: {}", jar_name),
                     });
-
                     let _ = app_clone.emit("log-entry", LogEntry {
                         device_serial: device_serial.clone(),
                         test_id: test_id.clone(),
                         timestamp: chrono_now(),
                         level: "error".to_string(),
-                        message: format!("✗ JAR not found: {}", jar_path.display()),
+                        message: format!("JAR not found: {}", jar_path.display()),
                     });
                     continue;
                 }
 
-                // Build classpath
-                let lib_dir = tools_path_clone.join("lib");
-                let mut classpath_parts = vec![jar_path.to_string_lossy().to_string()];
-                if lib_dir.exists() {
-                    if let Ok(entries) = std::fs::read_dir(&lib_dir) {
-                        for entry in entries.flatten() {
-                            let p = entry.path();
-                            if p.extension().map_or(false, |e| e == "jar") {
-                                classpath_parts.push(p.to_string_lossy().to_string());
-                            }
-                        }
+                // ─── Execute using AtmOctopus-style commands per tool ─────────────
+                let mut cmd = match test_id.as_str() {
+                    "svt" => {
+                        // AtmOctopus: java -jar /SVT.jar --silent -s <serial> -o <output_dir>
+                        let out_dir = atm_path_clone.clone() + "/results/SVT/" + &device_serial;
+                        let _ = std::fs::create_dir_all(&out_dir);
+                        let mut c = create_hidden_command("java");
+                        c.args([
+                            "-jar", &jar_path.to_string_lossy(),
+                            "--silent",
+                            "-s", &device_serial,
+                            "-o", &out_dir,
+                        ]).current_dir(&atm_path_clone);
+                        c
                     }
-                }
-                #[cfg(windows)]
-                let sep = ";";
-                #[cfg(not(windows))]
-                let sep = ":";
-                let classpath = classpath_parts.join(sep);
+                    "bvt" => {
+                        // AtmOctopus: java -jar /BVT.jar (no serial flag, but BVT detects connected device)
+                        let mut c = create_hidden_command("java");
+                        c.args(["-jar", &jar_path.to_string_lossy()])
+                            .current_dir(&atm_path_clone);
+                        c
+                    }
+                    "sdt" => {
+                        // AtmOctopus: installs SDT APK via adb push then runs instrumentation
+                        let apk = tools_path_clone.join("resource/SDT/SDT-Official.apk");
+                        let apk2 = tools_path_clone.join("resource/SDT/SDT-Aux-Official.apk");
+                        let mut c = create_hidden_command("adb");
+                        if apk.exists() {
+                            c.args([
+                                "-s", &device_serial,
+                                "install", "-r", "-d", &apk.to_string_lossy(),
+                            ]).current_dir(&atm_path_clone);
+                            let _ = c.output().await;
+                        }
+                        if apk2.exists() {
+                            let mut c2 = create_hidden_command("adb");
+                            c2.args([
+                                "-s", &device_serial,
+                                "install", "-r", "-d", &apk2.to_string_lossy(),
+                            ]).current_dir(&atm_path_clone);
+                            let _ = c2.output().await;
+                        }
+                        // Run SDT instrumentation
+                        let mut c = create_hidden_command("adb");
+                        c.args([
+                            "-s", &device_serial,
+                            "shell", "am", "instrument", "-w", "-r",
+                            "com.samsung.smcl.sdt.test/androidx.test.runner.AndroidJUnitRunner",
+                        ]).current_dir(&atm_path_clone);
+                        c
+                    }
+                    "getprop" => {
+                        // AtmOctopus: adb shell getprop (direct, no JAR)
+                        let mut c = create_hidden_command("adb");
+                        c.args(["-s", &device_serial, "shell", "getprop"])
+                            .current_dir(&atm_path_clone);
+                        c
+                    }
+                    _ => {
+                        // Generic fallback: java -jar <tool.jar> -s <serial>
+                        let mut c = create_hidden_command("java");
+                        c.args(["-jar", &jar_path.to_string_lossy(), "-s", &device_serial])
+                            .current_dir(&atm_path_clone);
+                        c
+                    }
+                };
 
-                // Find main class for this test
-                let main_class = get_default_tests().into_iter()
-                    .find(|t| t.id == *test_id)
-                    .map(|t| t.main_class)
-                    .unwrap_or_else(|| "com.sec.atm.Main".to_string());
-
-                // Run java command with automation flags
-                let mut child = match create_hidden_command("java")
-                    .args([
-                        "-cp",
-                        &classpath,
-                        &main_class,
-                        "-s",
-                        &device_serial,
-                        "-ui", "silent",
-                        "-r", "auto",
-                        "-e", "auto-start",
-                        "-auto",
-                    ])
-                    .current_dir(&atm_path_clone)
-                    .stdout(Stdio::piped())
-                    .stderr(Stdio::piped())
-                    .spawn()
-                {
+                let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
                     Ok(c) => c,
                     Err(e) => {
                         let _ = app_clone.emit("test-status", TestStatus {
@@ -480,8 +507,8 @@ async fn run_test_sequence(
                     timestamp: chrono_now(),
                     level: level.to_string(),
                     message: format!(
-                        "{} {} on {} — {}",
-                        if status == "pass" { "✓" } else { "✗" },
+                        "{} {} on {} - {}",
+                        if status == "pass" { "PASS" } else { "FAIL" },
                         test_id,
                         device_serial,
                         status.to_uppercase()
