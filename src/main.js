@@ -1,9 +1,26 @@
 // ─── Tauri API (lazy, safe access) ──────────────────
-function tauriAvailable() { return !!(window.__TAURI__); }
-function invoke(...args) { return window.__TAURI__.core.invoke(...args); }
-function listen(...args) { return window.__TAURI__.event.listen(...args); }
-function getWin() { return window.__TAURI__.window.getCurrentWindow(); }
-async function openDialog(opts) { return window.__TAURI__.dialog.open(opts); }
+function tauriAvailable() { 
+  return !!(window.__TAURI__ && window.__TAURI__.core); 
+}
+function invoke(cmd, args = {}) { 
+  if (!tauriAvailable()) return Promise.reject("Tauri not available");
+  return window.__TAURI__.core.invoke(cmd, args); 
+}
+function listen(event, cb) { 
+  if (!tauriAvailable()) return Promise.resolve(() => {});
+  return window.__TAURI__.event.listen(event, cb); 
+}
+function getWin() { 
+  try {
+    return window.__TAURI__.window.getCurrentWindow();
+  } catch (e) {
+    return null;
+  }
+}
+async function openDialog(opts) { 
+  if (!tauriAvailable()) return null;
+  return window.__TAURI__.dialog.open(opts); 
+}
 
 // ─── State ──────────────────────────────────────────
 let devices = [];
@@ -18,15 +35,19 @@ let toolsVersion = "N/A";
 
 // ─── Init ───────────────────────────────────────────
 document.addEventListener("DOMContentLoaded", async () => {
+  // Fail-safe: Always hide splash after 5 seconds regardless of errors
+  setTimeout(hideSplashScreen, 5000);
+
   setupEventListeners();
 
   // Wait for Tauri to be ready (v2 global interface)
   if (!tauriAvailable()) {
+    console.log("Waiting for Tauri...");
     await new Promise(resolve => {
       const check = setInterval(() => {
         if (tauriAvailable()) { clearInterval(check); resolve(); }
       }, 50);
-      setTimeout(() => { clearInterval(check); resolve(); }, 3000);
+      setTimeout(() => { clearInterval(check); resolve(); }, 2000);
     });
   }
 
@@ -37,48 +58,60 @@ document.addEventListener("DOMContentLoaded", async () => {
       await setupTauriListeners();
       await loadAtmPath();
       
-      // Parallelize non-critical initial data fetch
+      // Parallelize data fetch (don't block splash removal)
       Promise.all([
         refreshDevices(),
         loadTests(),
         fetchToolsVersion()
-      ]).catch(err => console.error("Async init error:", err));
+      ]).catch(err => console.error("Background init error:", err));
       
     } else {
       console.warn("Running in browser mode");
+      // Fallback data
       availableTests = [
-        { id: "bvt", name: "BVT", jar: "BVT.jar", test_type: "auto", description: "Build Verification Test" },
-        { id: "svt", name: "SVT", jar: "SVT.jar", test_type: "auto", description: "Screenshot Verification Tool" },
-        { id: "sdt", name: "SDT", jar: "SDT.jar", test_type: "auto", description: "Samsung Device Test" },
-        { id: "getprop", name: "Getprop", jar: "Getprop.jar", test_type: "auto", description: "Property Verifier" },
-        { id: "cscchecker", name: "CSCChecker", jar: "CSCChecker.jar", test_type: "optional", description: "CSC Checker" },
+        { id: "bvt", name: "BVT", jar: "BVT.jar", main_class: "com.bi.BVT.MainForm", test_type: "auto", description: "Build Verification Test" },
+        { id: "svt", name: "SVT", jar: "SVT.jar", main_class: "com.ast.svt.MainKt", test_type: "auto", description: "Screenshot Verification Tool" },
+        { id: "sdt", name: "SDT", jar: "SDT.jar", main_class: "com.sec.atm.Main", test_type: "auto", description: "Samsung Device Test" },
+        { id: "getprop", name: "Getprop", jar: "Getprop.jar", main_class: "com.sec.ui.Main", test_type: "auto", description: "Property Verifier" },
+        { id: "cscchecker", name: "CSCChecker", jar: "CSCChecker.jar", main_class: "MyApplcaition", test_type: "optional", description: "CSC Checker" },
       ];
       renderTests();
     }
   } catch (err) {
     console.error("Initialization failed:", err);
   } finally {
-    // Always hide splash after a short delay
     setTimeout(hideSplashScreen, 500);
   }
 });
 
 function hideSplashScreen() {
   const splash = document.getElementById("splash-screen");
-  if (splash) {
+  if (splash && !splash.classList.contains("fade-out")) {
     splash.classList.add("fade-out");
-    setTimeout(() => splash.remove(), 500);
+    setTimeout(() => {
+      if (splash.parentNode) splash.remove();
+    }, 500);
   }
 }
 
 // ─── Titlebar ───────────────────────────────────────
 function setupTitlebar() {
   const win = getWin();
-  document.getElementById("btn-minimize").addEventListener("click", () => win.minimize());
-  document.getElementById("btn-maximize").addEventListener("click", async () => {
-    (await win.isMaximized()) ? win.unmaximize() : win.maximize();
+  if (!win) return;
+
+  document.getElementById("btn-minimize")?.addEventListener("click", () => win.minimize());
+  document.getElementById("btn-maximize")?.addEventListener("click", async () => {
+    try {
+      if (await win.isMaximized()) {
+        await win.unmaximize();
+      } else {
+        await win.maximize();
+      }
+    } catch (e) {
+      console.error("Maximize toggle failed", e);
+    }
   });
-  document.getElementById("btn-close").addEventListener("click", () => win.close());
+  document.getElementById("btn-close")?.addEventListener("click", () => win.close());
 }
 
 // ─── Event Listeners ────────────────────────────────
