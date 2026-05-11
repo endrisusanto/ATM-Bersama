@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ATM Auto Runner | Next-Gen Testing Suite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&family=JetBrains+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #0a0a0a;
+            --surface: #111111;
+            --accent: #ffffff;
+            --muted: #888888;
+            --border: #222222;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: var(--bg);
+            color: #fff;
+            font-family: 'Outfit', sans-serif;
+            line-height: 1.6;
+            overflow-x: hidden;
+        }
+        .container { max-width: 1100px; margin: 0 auto; padding: 0 2rem; }
+        
+        /* Navbar */
+        nav {
+            padding: 1.5rem 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid var(--border);
+        }
+        .logo { font-weight: 800; font-size: 1.5rem; letter-spacing: -1px; display: flex; align-items: center; gap: 10px; }
+        .logo img { height: 32px; }
+        .nav-links { display: flex; gap: 2rem; }
+        .nav-links a { color: var(--muted); text-decoration: none; font-weight: 500; transition: color 0.2s; }
+        .nav-links a:hover { color: #fff; }
+
+        /* Hero */
+        .hero {
+            padding: 8rem 0;
+            text-align: center;
+            position: relative;
+        }
+        .hero::before {
+            content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+            width: 800px; height: 400px; background: radial-gradient(circle, rgba(255,255,255,0.05) 0%, transparent 70%);
+            z-index: -1;
+        }
+        h1 { font-size: 5rem; font-weight: 800; line-height: 1; margin-bottom: 1.5rem; letter-spacing: -2px; }
+        .hero p { font-size: 1.25rem; color: var(--muted); max-width: 600px; margin: 0 auto 2.5rem; }
+        .btn {
+            display: inline-block;
+            background: #fff; color: #000;
+            padding: 1rem 2.5rem; border-radius: 4px;
+            font-weight: 600; text-decoration: none;
+            transition: transform 0.2s, background 0.2s;
+        }
+        .btn:hover { transform: translateY(-2px); background: #f0f0f0; }
+        .btn-outline { background: transparent; color: #fff; border: 1px solid var(--border); margin-left: 1rem; }
+        .btn-outline:hover { background: var(--surface); }
+
+        /* Features */
+        .features { padding: 6rem 0; display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; }
+        .feature-card {
+            background: var(--surface); border: 1px solid var(--border); padding: 2.5rem;
+            transition: border-color 0.3s;
+        }
+        .feature-card:hover { border-color: #444; }
+        .feature-card h3 { font-size: 1.5rem; margin-bottom: 1rem; font-weight: 600; }
+        .feature-card p { color: var(--muted); font-size: 0.95rem; }
+        .icon { font-size: 2rem; margin-bottom: 1.5rem; display: block; }
+
+        /* Screenshot Mockup */
+        .mockup {
+            margin-top: 4rem;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            background: #000;
+            box-shadow: 0 50px 100px rgba(0,0,0,0.5);
+        }
+        .mockup-header { background: #1a1a1a; padding: 10px 15px; display: flex; gap: 6px; }
+        .dot { width: 10px; height: 10px; border-radius: 50%; background: #333; }
+        .mockup-body { height: 500px; background: #121212; position: relative; }
+        .mockup-content {
+            display: flex; height: 100%;
+        }
+        .mockup-side { width: 150px; border-right: 1px solid #222; padding: 20px; }
+        .mockup-main { flex: 1; padding: 40px; }
+        .skeleton { background: #1a1a1a; margin-bottom: 10px; border-radius: 2px; }
+
+        footer { padding: 4rem 0; border-top: 1px solid var(--border); color: var(--muted); text-align: center; font-size: 0.9rem; }
+
+        @media (max-width: 768px) {
+            h1 { font-size: 3rem; }
+            .features { grid-template-columns: 1fr; }
+            .nav-links { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <nav>
+            <div class="logo">
+                <img src="src/assets/logo.png" alt="ATM Logo">
+                <span>ATM RUNNER</span>
+            </div>
+            <div class="nav-links">
+                <a href="#features">Features</a>
+                <a href="https://github.com/endrisusanto/ATM-Bersama" target="_blank">GitHub</a>
+                <a href="https://github.com/endrisusanto/ATM-Bersama/releases" target="_blank">Download</a>
+            </div>
+        </nav>
+
+        <section class="hero">
+            <h1>Industrial Testing,<br>Simplified.</h1>
+            <p>Automate your Samsung ATM test sequences with a powerful, multi-device runner built for performance and reliability.</p>
+            <div class="hero-btns">
+                <a href="https://github.com/endrisusanto/ATM-Bersama/releases/latest" class="btn">Get Latest Release</a>
+                <a href="https://github.com/endrisusanto/ATM-Bersama" class="btn btn-outline">Source Code</a>
+            </div>
+
+            <div class="mockup">
+                <div class="mockup-header">
+                    <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+                </div>
+                <div class="mockup-body">
+                    <div class="mockup-content">
+                        <div class="mockup-side">
+                            <div class="skeleton" style="height: 10px; width: 60%"></div>
+                            <div class="skeleton" style="height: 20px; width: 100%; margin-top: 20px"></div>
+                            <div class="skeleton" style="height: 20px; width: 100%"></div>
+                        </div>
+                        <div class="mockup-main">
+                            <div style="display: flex; gap: 10px; margin-bottom: 30px">
+                                <div class="skeleton" style="height: 60px; flex: 1"></div>
+                                <div class="skeleton" style="height: 60px; flex: 1"></div>
+                                <div class="skeleton" style="height: 60px; flex: 1"></div>
+                            </div>
+                            <div class="skeleton" style="height: 200px; width: 100%"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="features" class="features">
+            <div class="feature-card">
+                <span class="icon">🚀</span>
+                <h3>Parallel Power</h3>
+                <p>Run full test suites on dozens of devices simultaneously. Zero bottlenecks, maximum throughput.</p>
+            </div>
+            <div class="feature-card">
+                <span class="icon">🛡️</span>
+                <h3>Industrial Grade</h3>
+                <p>Robust error handling and neutral gray dark mode designed for professional engineering environments.</p>
+            </div>
+            <div class="feature-card">
+                <span class="icon">📊</span>
+                <h3>Live Insights</h3>
+                <p>Track every test progress in real-time with our unique background-fill status cards and log streaming.</p>
+            </div>
+        </section>
+
+        <footer>
+            <p>&copy; 2026 ATM Auto Runner Project. Built with Tauri & Rust.</p>
+        </footer>
+    </div>
+</body>
+</html>
