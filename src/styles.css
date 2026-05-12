@@ -283,3 +283,30 @@ html, body {
 .empty-state, .empty-state-large { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--text-muted); }
 .empty-icon-svg { margin-bottom: 12px; opacity: 0.3; }
 .empty-icon-large-svg { margin-bottom: 20px; opacity: 0.2; }
+
+/* ─── Settings Section ─── */
+.settings-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 4px 16px 16px;
+}
+
+.toggle-setting {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.setting-name {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.simple-checkbox {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--accent-primary);
+}

@@ -3,7 +3,6 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager, State};
-use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 
 #[cfg(windows)]
@@ -301,6 +300,8 @@ async fn run_test_sequence(
     app: tauri::AppHandle,
     devices: Vec<String>,
     tests: Vec<String>,
+    bvt_gui: bool,
+    svt_gui: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let atm_path = state.atm_path.lock().unwrap().clone();
@@ -317,169 +318,85 @@ async fn run_test_sequence(
     }
 
     let tools_path = PathBuf::from(&atm_path).join("tools");
+    let devices_clone = devices.clone();
 
-    // Spawn tasks for each device
-    let mut handles = Vec::new();
-    for device_serial in devices {
-        let tests_clone = tests.clone();
-        let tools_path_clone = tools_path.clone();
-        let atm_path_clone = atm_path.clone();
-        let app_clone = app.clone();
+    let tests_clone = tests.clone();
+    let tools_path_clone = tools_path.clone();
+    let atm_path_clone = atm_path.clone();
+    let app_clone = app.clone();
 
-        let handle = tokio::spawn(async move {
-            for test_id in &tests_clone {
-                let jar_name = format!("{}.jar", test_id);
-                let jar_path = tools_path_clone.join(&jar_name);
+    // Sort tests to follow the specific order: getprop > sdt > bvt > svt
+    let mut ordered_tests = tests_clone.clone();
+    ordered_tests.sort_by_key(|t| {
+        match t.to_lowercase().as_str() {
+            "getprop" => 0,
+            "sdt" => 1,
+            "bvt" => 2,
+            "svt" => 3,
+            _ => 99,
+        }
+    });
 
-                // Emit test starting
-                let _ = app_clone.emit("test-status", TestStatus {
-                    device_serial: device_serial.clone(),
-                    test_id: test_id.clone(),
-                    status: "running".to_string(),
-                    progress: 0.0,
-                    message: format!("Starting {}...", test_id),
-                });
+    let handle = tokio::spawn(async move {
+        for test_id in &ordered_tests {
+            let test_id_lower = test_id.to_lowercase();
+            
+            // Find the JAR for this test
+            let mut jar_path = PathBuf::new();
+            if let Ok(entries) = std::fs::read_dir(&tools_path_clone) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name().to_string_lossy().to_lowercase();
+                    if name.contains(&test_id_lower) && name.ends_with(".jar") {
+                        jar_path = entry.path();
+                        break;
+                    }
+                }
+            }
 
-                let _ = app_clone.emit("log-entry", LogEntry {
-                    device_serial: device_serial.clone(),
-                    test_id: test_id.clone(),
-                    timestamp: chrono_now(),
-                    level: "info".to_string(),
-                    message: format!("▶ Starting {} on {}", test_id, device_serial),
-                });
-
-                if !jar_path.exists() && test_id != "getprop" {
-                    let _ = app_clone.emit("test-status", TestStatus {
-                        device_serial: device_serial.clone(),
-                        test_id: test_id.clone(),
-                        status: "error".to_string(),
-                        progress: 0.0,
-                        message: format!("JAR not found: {}", jar_name),
-                    });
+            if jar_path.as_os_str().is_empty() && test_id_lower != "getprop" {
+                for device_serial in &devices_clone {
                     let _ = app_clone.emit("log-entry", LogEntry {
                         device_serial: device_serial.clone(),
                         test_id: test_id.clone(),
                         timestamp: chrono_now(),
                         level: "error".to_string(),
-                        message: format!("JAR not found: {}", jar_path.display()),
+                        message: format!("Jar file for {} not found in tools directory", test_id),
                     });
-                    continue;
+                }
+                continue;
+            }
+
+            if test_id_lower == "getprop" || test_id_lower == "sdt" {
+                // Run ONCE for all devices (Single Window)
+                for device_serial in &devices_clone {
+                    let _ = app_clone.emit("test-status", TestStatus {
+                        device_serial: device_serial.clone(),
+                        test_id: test_id.clone(),
+                        status: "running".to_string(),
+                        progress: 0.0,
+                        message: format!("Starting {} (Shared Window)...", test_id),
+                    });
                 }
 
-                // ─── Execute using specific tool logic ───────────────────────────
-                let mut cmd = match test_id.as_str() {
-                    "svt" => {
-                        // SVT has a confirmed --silent flag
-                        let out_dir = atm_path_clone.clone() + "/results/SVT/" + &device_serial;
-                        let _ = std::fs::create_dir_all(&out_dir);
-                        let mut c = create_hidden_command("java");
-                        c.args([
-                            "-jar", &jar_path.to_string_lossy(),
-                            "--silent",
-                            "-s", &device_serial,
-                            "-o", &out_dir,
-                        ]).current_dir(&atm_path_clone);
-                        c
-                    }
-                    "sdt" | "getprop" | "bvt" => {
-                        // Use JAR with auto flags but NO silent flag to show the UI
-                        let main_class = match test_id.as_str() {
-                            "sdt" => "com.sec.atm.Main",
-                            "getprop" => "com.sec.ui.Main",
-                            "bvt" => "com.bi.BVT.MainForm",
-                            _ => "com.sec.atm.Main",
-                        };
-
-                        // Build classpath for these tools
-                        let lib_dir = tools_path_clone.join("lib");
-                        let mut cp_parts = vec![jar_path.to_string_lossy().to_string()];
-                        if lib_dir.exists() {
-                            if let Ok(entries) = std::fs::read_dir(&lib_dir) {
-                                for entry in entries.flatten() {
-                                    let p = entry.path();
-                                    if p.extension().map_or(false, |e| e == "jar") {
-                                        cp_parts.push(p.to_string_lossy().to_string());
-                                    }
-                                }
-                            }
-                        }
-                        #[cfg(windows)]
-                        let sep = ";";
-                        #[cfg(not(windows))]
-                        let sep = ":";
-                        let cp = cp_parts.join(sep);
-
-                        let mut c = create_hidden_command("java");
-                        c.args([
-                            "-cp", &cp,
-                            main_class,
-                            "-s", &device_serial,
-                            "-auto",
-                            "-e", "auto-start",
-                        ]).current_dir(&atm_path_clone);
-                        c
-                    }
-                    _ => {
-                        let mut c = create_hidden_command("java");
-                        c.args(["-jar", &jar_path.to_string_lossy(), "-s", &device_serial])
-                            .current_dir(&atm_path_clone);
-                        c
-                    }
-                };
-
-                let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
-                    Ok(c) => c,
+                let mut c = create_hidden_command("java");
+                c.args(["-jar", &jar_path.to_string_lossy()]).current_dir(&tools_path_clone);
+                
+                let mut child = match c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+                    Ok(ch) => ch,
                     Err(e) => {
-                        let _ = app_clone.emit("test-status", TestStatus {
-                            device_serial: device_serial.clone(),
-                            test_id: test_id.clone(),
-                            status: "error".to_string(),
-                            progress: 0.0,
-                            message: format!("Failed to start: {}", e),
-                        });
+                        for device_serial in &devices_clone {
+                            let _ = app_clone.emit("test-status", TestStatus {
+                                device_serial: device_serial.clone(),
+                                test_id: test_id.clone(),
+                                status: "error".to_string(),
+                                progress: 0.0,
+                                message: format!("Failed to start: {}", e),
+                            });
+                        }
                         continue;
                     }
                 };
 
-                // Stream stdout
-                if let Some(stdout) = child.stdout.take() {
-                    let reader = BufReader::new(stdout);
-                    let mut lines = reader.lines();
-                    let mut line_count = 0;
-
-                    while let Ok(Some(line)) = lines.next_line().await {
-                        line_count += 1;
-                        let level = if line.contains("FAIL") || line.contains("ERROR") || line.contains("fail") {
-                            "error"
-                        } else if line.contains("PASS") || line.contains("pass") || line.contains("OK") {
-                            "success"
-                        } else if line.contains("WARN") || line.contains("warn") {
-                            "warn"
-                        } else {
-                            "info"
-                        };
-
-                        let _ = app_clone.emit("log-entry", LogEntry {
-                            device_serial: device_serial.clone(),
-                            test_id: test_id.clone(),
-                            timestamp: chrono_now(),
-                            level: level.to_string(),
-                            message: line,
-                        });
-
-                        // Approximate progress
-                        let progress = (line_count as f32 / 100.0).min(0.95);
-                        let _ = app_clone.emit("test-status", TestStatus {
-                            device_serial: device_serial.clone(),
-                            test_id: test_id.clone(),
-                            status: "running".to_string(),
-                            progress,
-                            message: format!("Processing... ({} lines)", line_count),
-                        });
-                    }
-                }
-
-                // Wait for process to complete
                 let exit_status = child.wait().await;
                 let (status, level) = match exit_status {
                     Ok(s) if s.success() => ("pass", "success"),
@@ -487,37 +404,168 @@ async fn run_test_sequence(
                     Err(_) => ("error", "error"),
                 };
 
-                let _ = app_clone.emit("test-status", TestStatus {
-                    device_serial: device_serial.clone(),
-                    test_id: test_id.clone(),
-                    status: status.to_string(),
-                    progress: 1.0,
-                    message: format!("{} completed: {}", test_id, status.to_uppercase()),
-                });
+                for device_serial in &devices_clone {
+                    let _ = app_clone.emit("test-status", TestStatus {
+                        device_serial: device_serial.clone(),
+                        test_id: test_id.clone(),
+                        status: status.to_string(),
+                        progress: 1.0,
+                        message: format!("{} completed: {}", test_id, status.to_uppercase()),
+                    });
+                    let _ = app_clone.emit("log-entry", LogEntry {
+                        device_serial: device_serial.clone(),
+                        test_id: test_id.clone(),
+                        timestamp: chrono_now(),
+                        level: level.to_string(),
+                        message: format!("{} {} - {}", if status == "pass" { "PASS" } else { "FAIL" }, test_id, status.to_uppercase()),
+                    });
+                }
+            } else {
+                let is_gui_mode = if test_id_lower == "bvt" {
+                    bvt_gui
+                } else if test_id_lower == "svt" {
+                    svt_gui
+                } else {
+                    false
+                };
 
-                let _ = app_clone.emit("log-entry", LogEntry {
-                    device_serial: device_serial.clone(),
-                    test_id: test_id.clone(),
-                    timestamp: chrono_now(),
-                    level: level.to_string(),
-                    message: format!(
-                        "{} {} on {} - {}",
-                        if status == "pass" { "PASS" } else { "FAIL" },
-                        test_id,
-                        device_serial,
-                        status.to_uppercase()
-                    ),
-                });
+                if is_gui_mode {
+                    // GUI Mode: Run sequentially, ONE GUI window per device
+                    // No serial arg → opens in GUI mode and user selects device manually
+                    for device_serial in &devices_clone {
+                        let test_id_c = test_id.clone();
+                        let jar_path_c = jar_path.clone();
+                        let app_c = app_clone.clone();
+                        let serial_c = device_serial.clone();
+                        let tools_path_c = tools_path_clone.clone();
+
+                        let _ = app_c.emit("test-status", TestStatus {
+                            device_serial: serial_c.clone(),
+                            test_id: test_id_c.clone(),
+                            status: "running".to_string(),
+                            progress: 0.0,
+                            message: format!("Waiting for {} on {}...", test_id_c, serial_c),
+                        });
+                        let _ = app_c.emit("log-entry", LogEntry {
+                            device_serial: serial_c.clone(),
+                            test_id: test_id_c.clone(),
+                            timestamp: chrono_now(),
+                            level: "info".to_string(),
+                            message: format!("▶ Opening {} for {} — close window when done", test_id_c, serial_c),
+                        });
+
+                        let mut c = create_hidden_command("java");
+                        c.args(["-jar", &jar_path_c.to_string_lossy()])
+                         .env("ANDROID_SERIAL", &serial_c)
+                         .current_dir(&tools_path_c);
+
+                        let exit_status = match c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+                            Ok(mut ch) => ch.wait().await,
+                            Err(e) => {
+                                let _ = app_c.emit("test-status", TestStatus {
+                                    device_serial: serial_c.clone(), test_id: test_id_c.clone(),
+                                    status: "error".to_string(), progress: 0.0, message: format!("Failed: {}", e),
+                                });
+                                continue;
+                            }
+                        };
+
+                        let (status, level) = match exit_status {
+                            Ok(s) if s.success() => ("pass", "success"),
+                            Ok(_) => ("fail", "error"),
+                            Err(_) => ("error", "error"),
+                        };
+
+                        let _ = app_c.emit("test-status", TestStatus {
+                            device_serial: serial_c.clone(), test_id: test_id_c.clone(),
+                            status: status.to_string(), progress: 1.0,
+                            message: format!("{} completed: {}", test_id_c, status.to_uppercase()),
+                        });
+                        let _ = app_c.emit("log-entry", LogEntry {
+                            device_serial: serial_c.clone(), test_id: test_id_c.clone(),
+                            timestamp: chrono_now(), level: level.to_string(),
+                            message: format!("{} {} on {} - {}", if status == "pass" { "PASS" } else { "FAIL" }, test_id_c, serial_c, status.to_uppercase()),
+                        });
+                    }
+                } else {
+                    // Headless Mode: Run in parallel per device
+                    let mut process_handles = Vec::new();
+
+                    for device_serial in &devices_clone {
+                        let test_id_c = test_id.clone();
+                        let jar_path_c = jar_path.clone();
+                        let app_c = app_clone.clone();
+                        let serial_c = device_serial.clone();
+                        let atm_path_c = atm_path_clone.clone();
+                        let tools_path_c = tools_path_clone.clone();
+                        let test_lower_c = test_id_lower.clone();
+
+                        let ph = tokio::spawn(async move {
+                            let out_dir = format!("{}/results/{}/{}", atm_path_c, serial_c, test_lower_c);
+                            let _ = std::fs::create_dir_all(&out_dir);
+
+                            let _ = app_c.emit("test-status", TestStatus {
+                                device_serial: serial_c.clone(),
+                                test_id: test_id_c.clone(),
+                                status: "running".to_string(),
+                                progress: 0.0,
+                                message: format!("Starting {}...", test_id_c),
+                            });
+
+                            let mut c = create_hidden_command("java");
+                            if test_lower_c == "svt" {
+                                c.args(["-jar", &jar_path_c.to_string_lossy(), "-s", &serial_c, "-o", &out_dir])
+                                 .env("ANDROID_SERIAL", &serial_c)
+                                 .current_dir(&tools_path_c);
+                            } else {
+                                // BVT uses ddmlib - pass serial as positional arg
+                                c.args(["-jar", &jar_path_c.to_string_lossy(), &serial_c])
+                                 .env("ANDROID_SERIAL", &serial_c)
+                                 .current_dir(&tools_path_c);
+                            }
+
+                            let mut child = match c.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
+                                Ok(ch) => ch,
+                                Err(e) => {
+                                    let _ = app_c.emit("test-status", TestStatus {
+                                        device_serial: serial_c.clone(), test_id: test_id_c.clone(),
+                                        status: "error".to_string(), progress: 0.0, message: format!("Failed: {}", e),
+                                    });
+                                    return;
+                                }
+                            };
+
+                            let exit_status = child.wait().await;
+                            let (status, level) = match exit_status {
+                                Ok(s) if s.success() => ("pass", "success"),
+                                Ok(_) => ("fail", "error"),
+                                Err(_) => ("error", "error"),
+                            };
+
+                            let _ = app_c.emit("test-status", TestStatus {
+                                device_serial: serial_c.clone(), test_id: test_id_c.clone(),
+                                status: status.to_string(), progress: 1.0,
+                                message: format!("{} completed: {}", test_id_c, status.to_uppercase()),
+                            });
+                            let _ = app_c.emit("log-entry", LogEntry {
+                                device_serial: serial_c.clone(), test_id: test_id_c.clone(),
+                                timestamp: chrono_now(), level: level.to_string(),
+                                message: format!("{} {} on {} - {}", if status == "pass" { "PASS" } else { "FAIL" }, test_id_c, serial_c, status.to_uppercase()),
+                            });
+                        });
+                        process_handles.push(ph);
+                    }
+
+                    for ph in process_handles {
+                        let _ = ph.await;
+                    }
+                }
             }
-        });
+        }
+    });
 
-        handles.push(handle);
-    }
-
-    // Wait for all devices to complete
-    for handle in handles {
-        let _ = handle.await;
-    }
+    // Wait for the entire sequence to finish
+    let _ = handle.await;
 
     // Mark as not running
     let app_state = app.state::<AppState>();

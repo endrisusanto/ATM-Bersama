@@ -397,9 +397,14 @@ async function startTests() {
     message: `Starting tests on ${selectedDevices.size} device(s)` });
 
   try {
+    const bvtGui = document.getElementById("toggle-bvt-gui").checked;
+    const svtGui = document.getElementById("toggle-svt-gui").checked;
+
     await invoke("run_test_sequence", {
       devices: [...selectedDevices],
       tests: [...selectedTests],
+      bvtGui: bvtGui,
+      svtGui: svtGui,
     });
   } catch (e) {
     addLog({ device_serial: "SYSTEM", test_id: "", timestamp: now(), level: "error", message: `Error: ${e}` });
